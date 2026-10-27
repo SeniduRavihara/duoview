@@ -16,6 +16,14 @@ function save() {
 }
 function fit(p) {
   const stage = $('.stage',p.el);
+  if (p.width <= 600) {
+    // Reserve real platform scrollbar width plus padding and breathing room.
+    // A phone's CSS viewport stays unchanged; only its surrounding pane grows.
+    const gutter = stage.offsetWidth - stage.clientWidth;
+    const paneWidth = Math.max(440, p.width + 30 + gutter);
+    p.el.style.flex = `0 0 ${paneWidth}px`;
+    p.el.style.minWidth = `${paneWidth}px`;
+  }
   const scale = p.scale === 'fit'
     ? Math.max(.05, Math.min(1, (stage.clientWidth-12)/p.width, (stage.clientHeight-12)/p.height))
     : p.scale === 'width'
@@ -28,8 +36,8 @@ function fit(p) {
 }
 function refresh(p) {
   // Phones keep their native width; wider previews use the remaining canvas.
-  p.el.style.flex = p.width <= 600 ? `0 0 ${Math.max(420,p.width+14)}px` : `1 0 ${Math.max(960,p.width*.75)+14}px`;
-  p.el.style.minWidth = p.width <= 600 ? `${Math.max(420,p.width+14)}px` : `${Math.max(960,p.width*.75)+14}px`;
+  p.el.style.flex = p.width <= 600 ? `0 0 ${Math.max(440,p.width+30)}px` : `1 0 ${Math.max(960,p.width*.75)+14}px`;
+  p.el.style.minWidth = p.width <= 600 ? `${Math.max(440,p.width+30)}px` : `${Math.max(960,p.width*.75)+14}px`;
   const current = p.history.entries[p.history.index] || '';
   $('[data-action=back]',p.el).disabled = p.history.index <= 0 || p.busy;
   $('[data-action=forward]',p.el).disabled = p.history.index >= p.history.entries.length-1 || p.busy;
@@ -57,6 +65,15 @@ async function navigate(p, input, mode = 'new') {
     p.busy = false; p.pending = false; refresh(p);
     status(p,'Not loading? Try compatibility mode or ↗ Open in tab.');
   },15000);
+  if (!p.started) {
+    // Never insert an extension-origin blank document with both permissions.
+    p.frame.remove();
+    p.frame.src = url;
+    p.frame.setAttribute('sandbox', p.previewSandbox);
+    $('.screen',p.el).prepend(p.frame);
+    p.started = true;
+    return;
+  }
   try {
     const result = await request({type:'NAVIGATE',paneId:p.id,url,reload:mode === 'reload'});
     if (!result?.ok) p.frame.src = url;
@@ -66,6 +83,8 @@ function addPane(config = {}) {
   const p = {id:crypto.randomUUID(),width:402,height:874,preset:'iPhone 16 Pro',scale:'width',...config,history:{entries:[],index:-1},busy:false};
   p.el = $('#pane-template').content.firstElementChild.cloneNode(true); p.el.dataset.paneId = p.id;
   p.frame = $('iframe',p.el); p.frame.name = `duoview-${p.id}`;
+  p.previewSandbox = p.frame.getAttribute('sandbox');
+  p.frame.sandbox.remove('allow-same-origin');
   for (const [name] of presets) $('.preset',p.el).add(new Option(name,name));
   $('.navigation',p.el).addEventListener('submit',event => { event.preventDefault(); $('.pane-url',p.el).blur(); navigate(p,$('.pane-url',p.el).value); });
   p.el.addEventListener('click', async event => {
@@ -79,7 +98,7 @@ function addPane(config = {}) {
       const result = await request({type:'OPEN_TAB',url:current}); if (!result?.ok) toast(result?.error || 'Could not open tab.');
     } else if (action === 'remove') {
       if (panes.length === 1) return toast('Keep at least one viewport open.');
-      clearTimeout(p.timer); p.observer.disconnect(); p.el.remove(); panes = panes.filter(item => item !== p); updateCount(); save();
+      clearTimeout(p.timer); cancelAnimationFrame(p.resizeFrame); p.observer.disconnect(); p.el.remove(); panes = panes.filter(item => item !== p); updateCount(); save();
     } else if (action === 'rotate') {
       [p.width,p.height] = [p.height,p.width]; p.preset = 'Custom'; refresh(p); save();
     }
@@ -95,7 +114,10 @@ function addPane(config = {}) {
   });
   $('.scale',p.el).addEventListener('change',event => {p.scale=event.target.value;fit(p);save();});
   panes.push(p); $('#panes').append(p.el);
-  p.observer = new ResizeObserver(() => fit(p)); p.observer.observe($('.stage',p.el));
+  p.observer = new ResizeObserver(() => {
+    cancelAnimationFrame(p.resizeFrame);
+    p.resizeFrame = requestAnimationFrame(() => { if (p.el.isConnected) fit(p); });
+  }); p.observer.observe($('.stage',p.el));
   refresh(p); updateCount(); if (config.url) navigate(p,config.url);
   return p;
 }

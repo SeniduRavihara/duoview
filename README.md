@@ -12,9 +12,13 @@ A local Chrome extension for comparing desktop and mobile layouts side by side, 
 
 Chrome requires this manual installation step for an unpacked extension. No terminal commands or package installation are needed to use it. After changing source files, click Reload on the extension card and reopen DuoView.
 
-## Updating to 1.1.0
+## Updating to 1.1.2
 
 In `chrome://extensions`, click the Reload icon on the DuoView card, then close the old DuoView tab and click the extension icon again. The existing installation folder is unchanged. No reinstall is needed.
+
+Version 1.1.2 keeps blank preview frames under an opaque sandbox until an HTTP(S) target is assigned and defers ResizeObserver layout writes to an animation frame. Browser tests assert no blank-frame sandbox warnings or workspace JavaScript errors.
+
+Version 1.1.1 reserves room for the platform scrollbar in mobile panes, borrowing the space from the flexible desktop pane without changing the phone viewport width or scale.
 
 Version 1.1.0 replaces the large introductory header and three-row cards with a compact toolbar and two control rows. Mobile previews stay at native width; taller screens scroll vertically instead of shrinking. Wider viewports use available width, with a 75% minimum to protect readability; smaller windows can scroll the workspace horizontally. The old saved Fit preference migrates to Auto width once, keeping device sizes and URLs. Choose Fit whole explicitly when you want a small overview. The global 100% button restores native scale in every view.
 

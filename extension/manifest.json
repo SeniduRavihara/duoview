@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "DuoView — Responsive Workspace",
-  "version": "1.1.0",
+  "version": "1.1.2",
   "description": "Desktop and mobile previews together, with independent Back, Forward and address bars.",
   "minimum_chrome_version": "120",
   "permissions": ["activeTab", "storage", "scripting", "webNavigation", "declarativeNetRequestWithHostAccess"],

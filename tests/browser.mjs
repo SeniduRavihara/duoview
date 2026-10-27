@@ -20,7 +20,7 @@ try {
  context=await chromium.launchPersistentContext(profile,{channel:'chromium',executablePath:process.env.CHROMIUM_PATH || undefined,headless:true,viewport:{width:1600,height:1100},args:[`--disable-extensions-except=${root}/extension`,`--load-extension=${root}/extension`,'--no-sandbox']});
  const worker=context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
  const id=new URL(worker.url()).host;
- const page=await context.newPage();const errors=[];page.on('pageerror',e=>{errors.push(e.message);console.log('PAGE ERROR',e.message)});
+ const page=await context.newPage();const errors=[];const sandboxWarnings=[];page.on('console',m=>{if(m.text().includes('can escape its sandboxing'))sandboxWarnings.push(m.text());});page.on('pageerror',e=>{errors.push(e.message);console.log('PAGE ERROR',e.message)});
  await page.goto(`chrome-extension://${id}/studio.html?url=${encodeURIComponent(base+'/first')}`);
  const pane=i=>page.locator('.pane').nth(i);
  const frame=i=>pane(i).locator('iframe').contentFrame();
@@ -91,7 +91,7 @@ try {
   await page.screenshot({path:path.join(root,'artifacts',`workspace-${size.width}.png`)});
  }
  await page.screenshot({path:path.join(root,'artifacts','workspace.png')});
- assert.deepEqual(errors,[]);console.log('PASS: no workspace JavaScript errors');
+ assert.deepEqual(sandboxWarnings,[], 'No same-origin blank-frame sandbox warnings');assert.deepEqual(errors,[]);console.log('PASS: no workspace JavaScript errors');
  await page.locator('#compatibility').check();
  const testTabId=await page.evaluate(async()=>(await chrome.tabs.getCurrent()).id);
  assert.ok((await worker.evaluate(()=>chrome.declarativeNetRequest.getSessionRules())).some(r=>r.condition.tabIds.includes(testTabId)));
