@@ -11,18 +11,25 @@ async function request(message) { return chrome.runtime.sendMessage({...message,
 function save() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    chrome.storage.local.set({panes: panes.map(p => ({id:p.id, width:p.width, height:p.height, preset:p.preset, scale:p.scale, url:p.history.entries[p.history.index] || ''}))}).catch(() => toast('Your workspace could not be saved.'));
+    chrome.storage.local.set({layoutVersion:2, panes: panes.map(p => ({id:p.id, width:p.width, height:p.height, preset:p.preset, scale:p.scale, url:p.history.entries[p.history.index] || ''}))}).catch(() => toast('Your workspace could not be saved.'));
   }, 150);
 }
 function fit(p) {
   const stage = $('.stage',p.el);
-  const scale = p.scale === 'fit' ? Math.max(.05, Math.min(1, (stage.clientWidth-44)/p.width, (stage.clientHeight-44)/p.height)) : Number(p.scale);
+  const scale = p.scale === 'fit'
+    ? Math.max(.05, Math.min(1, (stage.clientWidth-12)/p.width, (stage.clientHeight-12)/p.height))
+    : p.scale === 'width'
+      ? (p.width <= 600 ? 1 : Math.max(.75, Math.min(1, (stage.clientWidth-12)/p.width)))
+      : Number(p.scale);
   const screen = $('.screen',p.el);
   screen.style.width = `${p.width*scale}px`; screen.style.height = `${p.height*scale}px`;
   p.frame.style.width = `${p.width}px`; p.frame.style.height = `${p.height}px`; p.frame.style.transform = `scale(${scale})`;
-  $('.zoom-label',p.el).textContent = `${p.scale === 'fit' ? 'Fit · ' : ''}${Math.round(scale*100)}%`;
+  $('.zoom-label',p.el).textContent = `${p.width} × ${p.height} · ${Math.round(scale*100)}%`;
 }
 function refresh(p) {
+  // Phones keep their native width; wider previews use the remaining canvas.
+  p.el.style.flex = p.width <= 600 ? `0 0 ${Math.max(420,p.width+14)}px` : `1 0 ${Math.max(960,p.width*.75)+14}px`;
+  p.el.style.minWidth = p.width <= 600 ? `${Math.max(420,p.width+14)}px` : `${Math.max(960,p.width*.75)+14}px`;
   const current = p.history.entries[p.history.index] || '';
   $('[data-action=back]',p.el).disabled = p.history.index <= 0 || p.busy;
   $('[data-action=forward]',p.el).disabled = p.history.index >= p.history.entries.length-1 || p.busy;
@@ -56,7 +63,7 @@ async function navigate(p, input, mode = 'new') {
   } catch { p.frame.src = url; }
 }
 function addPane(config = {}) {
-  const p = {id:crypto.randomUUID(),width:402,height:874,preset:'iPhone 16 Pro',scale:'fit',...config,history:{entries:[],index:-1},busy:false};
+  const p = {id:crypto.randomUUID(),width:402,height:874,preset:'iPhone 16 Pro',scale:'width',...config,history:{entries:[],index:-1},busy:false};
   p.el = $('#pane-template').content.firstElementChild.cloneNode(true); p.el.dataset.paneId = p.id;
   p.frame = $('iframe',p.el); p.frame.name = `duoview-${p.id}`;
   for (const [name] of presets) $('.preset',p.el).add(new Option(name,name));
@@ -116,6 +123,7 @@ $('#global-form').addEventListener('submit',event => {
   $('#global-url').value=url; panes.forEach(p => navigate(p,url));
 });
 $('#add').addEventListener('click',() => {if(panes.length<6) { addPane({url:panes[0]?.history.entries[panes[0]?.history.index] || ''}); save(); }});
+$('#actual').addEventListener('click',() => {panes.forEach(p => {p.scale='1';refresh(p);});save();});
 $('#fit').addEventListener('click',() => {panes.forEach(p => {p.scale='fit';refresh(p);});save();});
 $('#compatibility').addEventListener('change',async event => {
   const enabled = event.target.checked;
@@ -130,13 +138,18 @@ $('#guide').addEventListener('click',event => {if(event.target === $('#guide')) 
 async function init() {
   tabId = (await chrome.tabs.getCurrent()).id;
   const result = await request({type:'INIT'}); if (!result?.ok) throw new Error(result?.error || 'Initialization failed.');
-  const stored = await chrome.storage.local.get('panes');
+  const stored = await chrome.storage.local.get(['panes','layoutVersion']);
   let incoming = new URLSearchParams(location.search).get('url');
   if (incoming) {try{incoming=normalizeUrl(incoming);}catch{incoming=null;}}
   const configs = Array.isArray(stored.panes) && stored.panes.length ? stored.panes.slice(0,6) : [
     {preset:'Desktop HD',width:1280,height:720},{preset:'iPhone 16 Pro',width:402,height:874}
   ];
-  for (const config of configs) addPane({...config,...incoming ? {url:incoming} : {}});
+  for (const config of configs) {
+    // Upgrade the old unreadable Fit default once, while retaining devices and URLs.
+    const scale = stored.layoutVersion !== 2 && config.scale === 'fit' ? 'width' : (config.scale || 'width');
+    addPane({...config,scale,...incoming ? {url:incoming} : {}});
+  }
+  save();
   $('#global-url').value = incoming || configs[0]?.url || '';
 }
 init().catch(error => toast(`DuoView could not start: ${error.message}`));

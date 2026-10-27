@@ -12,14 +12,22 @@ A local Chrome extension for comparing desktop and mobile layouts side by side, 
 
 Chrome requires this manual installation step for an unpacked extension. No terminal commands or package installation are needed to use it. After changing source files, click Reload on the extension card and reopen DuoView.
 
+## Updating to 1.1.0
+
+In `chrome://extensions`, click the Reload icon on the DuoView card, then close the old DuoView tab and click the extension icon again. The existing installation folder is unchanged. No reinstall is needed.
+
+Version 1.1.0 replaces the large introductory header and three-row cards with a compact toolbar and two control rows. Mobile previews stay at native width; taller screens scroll vertically instead of shrinking. Wider viewports use available width, with a 75% minimum to protect readability; smaller windows can scroll the workspace horizontally. The old saved Fit preference migrates to Auto width once, keeping device sizes and URLs. Choose Fit whole explicitly when you want a small overview. The global 100% button restores native scale in every view.
+
+The readability regression test checks 1920×900, 1440×900 and 1366×768 browser windows, including migration of existing saved preferences. At 1920×900, desktop renders at 1280 CSS pixels and mobile at 402 CSS pixels; preview content starts at 141 pixels from the top.
+
 ## Features
 
 - Desktop and mobile previews together; up to six independent viewports.
 - Per-view Back / Forward / Reload, address bar, and Open in tab.
 - Top address bar opens one URL across every view.
 - Desktop, laptop, iPhone, Pixel, Galaxy and iPad size presets.
-- Custom widths/heights from 240 to 3840 CSS pixels; rotate width and height.
-- Automatic fit and manual scales from 25% to 125%.
+- Custom widths/heights from 240 to 3840 CSS pixels through the gear menu; rotate width and height.
+- Readable Auto width by default: phones stay at 100%, desktop views stay at 75% or larger. Manual scales from 50% to 200%, plus an optional Fit whole overview.
 - Last URLs, devices and scales saved automatically on this computer.
 - Optional, tab-scoped compatibility mode for sites blocking embedding.
 - Keyboard-accessible controls and an in-app quick guide.
@@ -62,6 +70,7 @@ npm test
 npm install
 npx playwright install chromium
 npm run test:browser
+npm run test:readability
 npm run package
 ```
 

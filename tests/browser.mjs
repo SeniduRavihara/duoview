@@ -55,9 +55,9 @@ try {
  await ready(0);await pane(0).getByRole('button',{name:'Reload',exact:true}).click();await ready(0);
  await pane(0).getByRole('button',{name:'Back',exact:true}).click();await waitUrl(0,base+'/first');
  console.log('PASS: reload does not duplicate history');
- await pane(1).locator('.width').fill('420');await pane(1).locator('.width').press('Tab');
+ await pane(1).locator('.settings summary').click();await pane(1).locator('.width').fill('420');await pane(1).locator('.width').press('Tab');
  assert.equal(await frame(1).locator('body').evaluate(()=>innerWidth),420);
- await pane(1).getByRole('button',{name:'Rotate viewport'}).click();
+ await pane(1).locator('.settings summary').click();await pane(1).getByRole('button',{name:'Rotate viewport'}).click();
  assert.equal(await frame(1).locator('body').evaluate(()=>innerWidth),874);
  await pane(1).locator('.preset').selectOption('iPhone 16 Pro');
  await page.getByRole('button',{name:'Add viewport'}).click();assert.equal(await page.locator('.pane').count(),3);
@@ -85,7 +85,12 @@ try {
  await page.locator('#global-url').fill(base+'/first');await page.locator('#global-url').press('Enter');await ready(0);await ready(1);
  await page.waitForTimeout(300);
  await mkdir(path.join(root,'artifacts'),{recursive:true});
- await page.screenshot({path:path.join(root,'artifacts','workspace.png'),fullPage:true});
+ await page.locator('#global-url').blur();
+ for(const size of [{width:1920,height:900},{width:1440,height:900}]){
+  await page.setViewportSize(size);await page.waitForTimeout(150);
+  await page.screenshot({path:path.join(root,'artifacts',`workspace-${size.width}.png`)});
+ }
+ await page.screenshot({path:path.join(root,'artifacts','workspace.png')});
  assert.deepEqual(errors,[]);console.log('PASS: no workspace JavaScript errors');
  await page.locator('#compatibility').check();
  const testTabId=await page.evaluate(async()=>(await chrome.tabs.getCurrent()).id);
