@@ -1,22 +1,48 @@
 import { normalizeUrl, record, step } from './history.js';
+import { visiblePreviewRect, saveScreenshot } from './screenshot.js';
+import { rebuildDividers } from './dividers.js';
 const $ = (selector, root = document) => root.querySelector(selector);
 const presets = [
   ['Desktop HD',1280,720],['Desktop Full HD',1920,1080],['Laptop',1440,900],
   ['iPhone 16 Pro',402,874],['iPhone 16',393,852],['iPhone SE',375,667],
   ['Pixel 9',412,915],['Galaxy S24',360,780],['iPad',768,1024],['Custom',0,0]
 ];
-let panes = [], tabId, saveTimer, toastTimer;
+let panes = [], tabId, saveTimer, toastTimer, capturing = false, lastCapture = 0;
 function toast(message) { $('#toast').textContent = message; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('#toast').hidden = true, 6500); }
 async function request(message) { return chrome.runtime.sendMessage({...message, tabId}); }
+async function screenshot(p) {
+  if (capturing) return;
+  if (Date.now()-lastCapture < 700) return toast('Please wait a moment before another screenshot.');
+  if (p && !p.history.entries.length) return toast('Open a website in this preview first.');
+  capturing = true;
+  const buttons = document.querySelectorAll('[data-action=screenshot],#capture-workspace');
+  buttons.forEach(button=>button.disabled=true);
+  try {
+    document.activeElement?.blur();
+    $('#toast').hidden = true;
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    if (document.visibilityState !== 'visible') throw new Error('Keep DuoView selected while taking a screenshot.');
+    const rect = p ? visiblePreviewRect(p.frame,$('.stage',p.el)) : {left:0,top:0,width:innerWidth,height:innerHeight};
+    const viewport = {width:innerWidth,height:innerHeight};
+    const response = await request({type:'SCREENSHOT'});
+    if (!response?.ok) throw new Error(response?.error || 'Screenshot failed.');
+    if (innerWidth !== viewport.width || innerHeight !== viewport.height) throw new Error('Window resized during capture. Please try again.');
+    const label = p ? `${p.preset}-${p.width}x${p.height}` : 'workspace';
+    const timestamp = new Date().toISOString().replace(/[:.]/g,'-');
+    await saveScreenshot(response.dataUrl,rect,viewport,`DuoView-${label.replace(/[^a-z0-9-]/gi,'-')}-${timestamp}.png`);
+    toast('PNG saved to your browser downloads.');
+  } catch(error) {toast(error.message);}
+  finally {capturing=false;lastCapture=Date.now();buttons.forEach(button=>button.disabled=false);}
+}
 function save() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    chrome.storage.local.set({layoutVersion:2, panes: panes.map(p => ({id:p.id, width:p.width, height:p.height, preset:p.preset, scale:p.scale, url:p.history.entries[p.history.index] || ''}))}).catch(() => toast('Your workspace could not be saved.'));
+    chrome.storage.local.set({layoutVersion:2, panes: panes.map(p => ({id:p.id, width:p.width, height:p.height, preset:p.preset, scale:p.scale, panelWidth:p.panelWidth, url:p.history.entries[p.history.index] || ''}))}).catch(() => toast('Your workspace could not be saved.'));
   }, 150);
 }
 function fit(p) {
   const stage = $('.stage',p.el);
-  if (p.width <= 600) {
+  if (!p.panelWidth && p.width <= 600) {
     // Reserve real platform scrollbar width plus padding and breathing room.
     // A phone's CSS viewport stays unchanged; only its surrounding pane grows.
     const gutter = stage.offsetWidth - stage.clientWidth;
@@ -38,6 +64,7 @@ function refresh(p) {
   // Phones keep their native width; wider previews use the remaining canvas.
   p.el.style.flex = p.width <= 600 ? `0 0 ${Math.max(440,p.width+30)}px` : `1 0 ${Math.max(960,p.width*.75)+14}px`;
   p.el.style.minWidth = p.width <= 600 ? `${Math.max(440,p.width+30)}px` : `${Math.max(960,p.width*.75)+14}px`;
+  if (p.panelWidth) {p.el.style.flex=`1 1 ${p.panelWidth}px`;p.el.style.minWidth='320px';}
   const current = p.history.entries[p.history.index] || '';
   $('[data-action=back]',p.el).disabled = p.history.index <= 0 || p.busy;
   $('[data-action=forward]',p.el).disabled = p.history.index >= p.history.entries.length-1 || p.busy;
@@ -63,7 +90,7 @@ async function navigate(p, input, mode = 'new') {
   clearTimeout(p.timer);
   p.timer = setTimeout(() => {
     p.busy = false; p.pending = false; refresh(p);
-    status(p,'Not loading? Try compatibility mode or ↗ Open in tab.');
+    status(p,'Not loading? Try compatibility mode or Open in tab.');
   },15000);
   if (!p.started) {
     // Never insert an extension-origin blank document with both permissions.
@@ -90,7 +117,8 @@ function addPane(config = {}) {
   p.el.addEventListener('click', async event => {
     const action = event.target.closest('[data-action]')?.dataset.action;
     const current = p.history.entries[p.history.index];
-    if (action === 'back' || action === 'forward') {
+    if (action === 'screenshot') { await screenshot(p); }
+    else if (action === 'back' || action === 'forward') {
       const url = step(p.history,action === 'back' ? -1 : 1);
       if (url) await navigate(p,url,'traverse');
     } else if (action === 'reload' && current) await navigate(p,current,'reload');
@@ -100,17 +128,17 @@ function addPane(config = {}) {
       if (panes.length === 1) return toast('Keep at least one viewport open.');
       clearTimeout(p.timer); cancelAnimationFrame(p.resizeFrame); p.observer.disconnect(); p.el.remove(); panes = panes.filter(item => item !== p); updateCount(); save();
     } else if (action === 'rotate') {
-      [p.width,p.height] = [p.height,p.width]; p.preset = 'Custom'; refresh(p); save();
+      p.panelWidth=null; [p.width,p.height] = [p.height,p.width]; p.preset = 'Custom'; refresh(p); save();
     }
   });
   $('.preset',p.el).addEventListener('change',event => {
-    p.preset = event.target.value; const preset = presets.find(item => item[0] === p.preset);
+    p.panelWidth=null; p.preset = event.target.value; const preset = presets.find(item => item[0] === p.preset);
     if (preset[1]) [p.width,p.height] = preset.slice(1); refresh(p); save();
   });
   for (const dimension of ['width','height']) $('.'+dimension,p.el).addEventListener('change',event => {
     const value = Number(event.target.value);
     if (!Number.isInteger(value) || value < 240 || value > 3840) { toast('Viewport dimensions must be between 240 and 3840 pixels.'); refresh(p); return; }
-    p[dimension] = value; p.preset = 'Custom'; refresh(p); save();
+    p.panelWidth=null; p[dimension] = value; p.preset = 'Custom'; refresh(p); save();
   });
   $('.scale',p.el).addEventListener('change',event => {p.scale=event.target.value;fit(p);save();});
   panes.push(p); $('#panes').append(p.el);
@@ -121,7 +149,7 @@ function addPane(config = {}) {
   refresh(p); updateCount(); if (config.url) navigate(p,config.url);
   return p;
 }
-function updateCount() { $('#view-count').textContent = `${panes.length} viewport${panes.length===1?'':'s'}`; $('#add').disabled = panes.length >= 6; }
+function updateCount() { rebuildDividers(panes,refresh,save); $('#view-count').textContent = `${panes.length} viewport${panes.length===1?'':'s'}`; $('#add').disabled = panes.length >= 6; }
 chrome.runtime.onMessage.addListener(message => {
   if (message.type !== 'FRAME_EVENT' || message.tabId !== tabId) return;
   const p = panes.find(item => item.id === message.paneId); if (!p) return;
@@ -136,7 +164,7 @@ chrome.runtime.onMessage.addListener(message => {
   }
   if (message.kind === 'error' && message.error !== 'net::ERR_ABORTED') {
     clearTimeout(p.timer); p.busy = false; p.pending = false; refresh(p);
-    status(p,'Could not load. Try compatibility mode or ↗ Open in tab.');
+    status(p,'Could not load. Try compatibility mode or Open in tab.');
   }
 });
 $('#global-form').addEventListener('submit',event => {
@@ -145,6 +173,7 @@ $('#global-form').addEventListener('submit',event => {
   $('#global-url').value=url; panes.forEach(p => navigate(p,url));
 });
 $('#add').addEventListener('click',() => {if(panes.length<6) { addPane({url:panes[0]?.history.entries[panes[0]?.history.index] || ''}); save(); }});
+$('#capture-workspace').addEventListener('click',()=>screenshot());
 $('#actual').addEventListener('click',() => {panes.forEach(p => {p.scale='1';refresh(p);});save();});
 $('#fit').addEventListener('click',() => {panes.forEach(p => {p.scale='fit';refresh(p);});save();});
 $('#compatibility').addEventListener('change',async event => {

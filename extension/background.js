@@ -33,7 +33,15 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     }
     const state = await workspace(tabId);
     if (!state) throw new Error('Reload the DuoView workspace.');
-    if (message.type === 'COMPATIBILITY') {
+    if (message.type === 'SCREENSHOT') {
+      const tab = await chrome.tabs.get(tabId);
+      const active = (await chrome.tabs.query({active:true,windowId:tab.windowId}))[0];
+      if (!tab.active || active?.id !== tabId) throw new Error('Keep DuoView selected while taking a screenshot.');
+      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId,{format:'png'});
+      const after = (await chrome.tabs.query({active:true,windowId:tab.windowId}))[0];
+      if (after?.id !== tabId) throw new Error('Tab changed during capture. Please try again.');
+      return {ok:true,dataUrl};
+    } else if (message.type === 'COMPATIBILITY') {
       await setCompatibility(tabId, !!message.enabled);
     } else if (message.type === 'NAVIGATE') {
       const frameId = state.frames[message.paneId];

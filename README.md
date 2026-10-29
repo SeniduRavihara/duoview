@@ -12,9 +12,17 @@ A local Chrome extension for comparing desktop and mobile layouts side by side, 
 
 Chrome requires this manual installation step for an unpacked extension. No terminal commands or package installation are needed to use it. After changing source files, click Reload on the extension card and reopen DuoView.
 
-## Updating to 1.1.2
+## Updating to 1.3.1
 
 In `chrome://extensions`, click the Reload icon on the DuoView card, then close the old DuoView tab and click the extension icon again. The existing installation folder is unchanged. No reinstall is needed.
+
+Version 1.3.1 lets saved split panels shrink or grow with the available workspace width, preventing oversized saved widths from pushing the second pane off-screen. The 320px panel minimum remains for very narrow windows and many-preview layouts.
+
+Version 1.3.0 adds a draggable vertical divider between each adjacent pair of previews. Hover to see the resize cursor, then drag left/right. Both actual website viewport widths update live without reload, triggering responsive CSS changes. The pair switches to Custom at 100% scale, preserving heights and navigation. Widths are saved automatically. Focus a divider and use arrow keys for 10px steps, or Shift+arrows for 50px. Each surrounding panel has a 320px minimum; on smaller windows the workspace may scroll horizontally. Selecting a device preset or setting dimensions manually restores automatic pane sizing. SVG icons remain in use.
+
+Version 1.2.0 adds a camera button to each viewport and a Screenshot button for the visible workspace. PNGs download through Chrome, use the current screen resolution and preview scale, and contain only the visible portion (not the full scrolling page). Per-view captures exclude DuoView controls. Scroll to the desired section before capturing. Files stay local.
+
+Chrome's captureVisibleTab API requires `<all_urls>` host access for these buttons to work without an extra extension-icon click in the workspace tab. On reload Chrome may ask you to accept the updated site-access permission or re-enable DuoView. Capture runs only when you press a screenshot button and the DuoView tab is active.
 
 Version 1.1.2 keeps blank preview frames under an opaque sandbox until an HTTP(S) target is assigned and defers ResizeObserver layout writes to an animation frame. Browser tests assert no blank-frame sandbox warnings or workspace JavaScript errors.
 
@@ -56,7 +64,7 @@ Only HTTP(S) URLs are supported, including localhost. Chrome internal pages, ext
 
 No analytics, remote scripts, API keys, telemetry, or external dependencies are included in the extension. Only the websites you preview make network requests. Saved URLs and viewport preferences stay in `chrome.storage.local`.
 
-- **HTTP/HTTPS host access**: run navigation commands inside previews and optionally change embedding response headers. Chrome may display a broad site-access warning; actual navigation handling is restricted to registered DuoView tabs.
+- **All-URLs host access**: required by Chrome for the user-triggered visible-tab screenshot API; preview navigation remains HTTP/HTTPS only. Also used to run navigation commands inside previews and optionally change embedding response headers. Chrome may display a broad site-access warning; actual navigation handling is restricted to registered DuoView tabs.
 - **activeTab**: start from the page where the extension icon was clicked.
 - **webNavigation**: detect preview URL changes, including SPA/hash navigation.
 - **scripting**: identify preview frames and navigate/reload a specific frame.

@@ -1,5 +1,5 @@
 import {createServer} from 'node:http';
-import {mkdtemp,rm,mkdir} from 'node:fs/promises';
+import {mkdtemp,rm,mkdir,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -91,6 +91,53 @@ try {
   await page.screenshot({path:path.join(root,'artifacts',`workspace-${size.width}.png`)});
  }
  await page.screenshot({path:path.join(root,'artifacts','workspace.png')});
+ await page.setViewportSize({width:1920,height:900});await page.bringToFront();await page.waitForTimeout(200);
+ async function capture(button,filename) {
+  const waiting=page.waitForEvent('download',{timeout:10000});
+  await button.click();const download=await waiting;
+  const file=path.join(root,'artifacts',filename);await download.saveAs(file);
+  assert.match(download.suggestedFilename(),/^DuoView-.*\.png$/);
+  const bytes=await readFile(file);
+  const pixels=await page.evaluate(async data=>{
+   const bitmap=await createImageBitmap(await (await fetch('data:image/png;base64,'+data)).blob());
+   const c=document.createElement('canvas');c.width=bitmap.width;c.height=bitmap.height;
+   const ctx=c.getContext('2d');ctx.drawImage(bitmap,0,0);
+   const result={width:c.width,height:c.height,pixel:[...ctx.getImageData(Math.floor(c.width/2),20,1,1).data]};bitmap.close();return result;
+  },bytes.toString('base64'));
+  await page.waitForTimeout(750);return pixels;
+ }
+ const mobile=await capture(pane(1).getByRole('button',{name:'Screenshot preview'}),'mobile-capture.png');
+ assert.equal(mobile.width,402);assert.ok(mobile.height>600 && mobile.height<874);
+ assert.deepEqual(mobile.pixel,[245,245,239,255],'Capture contains website pixels, not workspace controls');
+ const desktop=await capture(pane(0).getByRole('button',{name:'Screenshot preview'}),'desktop-capture.png');
+ assert.equal(desktop.width,1280);assert.equal(desktop.height,720);
+ const whole=await capture(page.getByRole('button',{name:'Screenshot workspace'}),'workspace-capture.png');
+ assert.equal(whole.width,1920);assert.equal(whole.height,900);
+ console.log('PASS: downloaded mobile, desktop and workspace PNGs with correct dimensions and website pixels');
+ const divider=page.getByRole('separator').first();
+ const beforeWidths=await Promise.all([0,1].map(i=>frame(i).locator('body').evaluate(()=>innerWidth)));
+ const unchangedUrl=await address(1).inputValue();
+ await frame(1).locator('body').evaluate(()=>window.dragMarker='preserved');
+ const boundary=await divider.boundingBox();
+ await page.mouse.move(boundary.x+boundary.width/2,boundary.y+150);await page.mouse.down();
+ await page.mouse.move(boundary.x-220,boundary.y+150,{steps:12});
+ await page.waitForTimeout(100);
+ const during=await frame(1).locator('body').evaluate(()=>innerWidth);
+ assert.ok(during>beforeWidths[1]+150,'Viewport must resize while dragging, before release');
+ assert.equal(await frame(1).locator('nav').evaluate(el=>getComputedStyle(el).display),'block','Responsive CSS must cross its mobile breakpoint');
+ await page.mouse.up();
+ assert.equal(await frame(1).locator('body').evaluate(()=>window.dragMarker),'preserved','Dragging must not reload the website');
+ assert.equal(await address(1).inputValue(),unchangedUrl);
+ assert.equal(await page.locator('body').evaluate(el=>el.classList.contains('resizing-viewports')),false);
+ await divider.focus();await page.keyboard.press('ArrowLeft');
+ await page.waitForTimeout(100);
+ const afterKey=await frame(1).locator('body').evaluate(()=>innerWidth);
+ assert.equal(afterKey,during+10);
+ await page.waitForTimeout(250);
+ await page.reload();await frame(1).locator('#path').waitFor();
+ assert.equal(await frame(1).locator('body').evaluate(()=>innerWidth),afterKey);
+ assert.equal(await page.getByRole('separator').count(),1);
+ console.log('PASS: live divider resizing changes CSS breakpoints without reload, keyboard adjustment and persistence');
  assert.deepEqual(sandboxWarnings,[], 'No same-origin blank-frame sandbox warnings');assert.deepEqual(errors,[]);console.log('PASS: no workspace JavaScript errors');
  await page.locator('#compatibility').check();
  const testTabId=await page.evaluate(async()=>(await chrome.tabs.getCurrent()).id);
